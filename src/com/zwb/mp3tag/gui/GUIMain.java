@@ -12,7 +12,7 @@ public class GUIMain
     
     public static void main(String[] args)
     {
-	MainWindow m = new MainWindow();
+	TaggerApplication m = new TaggerApplication();
     }
     
 
