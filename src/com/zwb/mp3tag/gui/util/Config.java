@@ -14,6 +14,7 @@ public class Config
     public static final String BUTTON_SHOW_META_TITLE = "show metadata file (external editor)";
     public static final String LABEL_ARTIST = "artist: ";
     public static final String LABEL_RELEASE = "release: ";
+    public static final String LABEL_TRACKCOUNT = "track #: ";
     public static final String LABEL_EDITOR_PATH = "external editor command:";
     
     public static final String EDITOR_FILE_PLACEHOLDER = "\\$FOLDER_PATH";

@@ -13,6 +13,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -23,7 +25,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.JTextPane;
 
 import com.zwb.fsparser.api.GkFsParserFactory;
 import com.zwb.fsparser.api.IGkFsEntry;
@@ -36,6 +37,9 @@ import com.zwb.mp3tag.connector.api.IGkMp3TaggerMetaInfoCollector;
 import com.zwb.mp3tag.connector.exception.GkMp3TaggerConnectorExceptionTagger;
 import com.zwb.mp3tag.gui.util.Config;
 import com.zwb.mp3tag.gui.util.MyLogger;
+import com.zwb.mp3tag.profile.api.GkTaggingProfileReaderWriterFactory;
+import com.zwb.mp3tag.profile.api.IGkTaggingProfileReader;
+import com.zwb.mp3tag.profile.api.ITaggingProfile;
 
 public class TaggerApplication
 {
@@ -47,6 +51,7 @@ public class TaggerApplication
     private JFileChooser fileChooser;
     private JLabel labelArtist;
     private JLabel labelRelease;
+    private JLabel labelTrackcount;
     private JPanel artistReleasePanel;
     private JPanel buttonPanel;
     private JPanel editorPanel;
@@ -55,6 +60,8 @@ public class TaggerApplication
     private JLabel labelFieldEditorPath;
     private JTextArea textArea;
     private JPanel statusPanel;
+    private JPanel statusLine;
+    private JLabel statusLabel;
     
     private MyLogger log = new MyLogger(this.getClass());
     IGkMp3TagWriter writer = GkMp3TaggerAggregatorFactory.createTagWriter();
@@ -82,6 +89,13 @@ public class TaggerApplication
 	// this.fileChooser.setAccessory(new FileSelectorAccessory());
 	mainFrame.add(this.fileChooser, BorderLayout.WEST);
 	this.fileChooser.addPropertyChangeListener(new FileSelectorAccessoryActionListener());
+	this.fileChooser.setMultiSelectionEnabled(true);
+	
+	this.statusLine = new JPanel();
+	this.statusLine.setLayout(new FlowLayout());
+	this.statusLine.setBackground(Color.gray);
+	this.statusLabel = new JLabel("started...");
+	this.statusLine.add(this.statusLabel);
 	
 	this.artistReleasePanel = new JPanel();
 	this.artistReleasePanel.setLayout(new FlowLayout());
@@ -134,7 +148,11 @@ public class TaggerApplication
 	this.labelRelease = new JLabel(Config.LABEL_RELEASE);
 	this.artistReleasePanel.add(this.labelRelease);
 	
-	this.statusPanel.add(this.artistReleasePanel, BorderLayout.NORTH);
+	this.labelTrackcount = new JLabel(Config.LABEL_TRACKCOUNT);
+	this.artistReleasePanel.add(this.labelTrackcount);
+
+	this.statusPanel.add(this.statusLine, BorderLayout.EAST);
+	this.statusPanel.add(this.artistReleasePanel, BorderLayout.WEST);
 	
 	this.textArea = new JTextArea();
 	JPanel p = new JPanel();
@@ -153,25 +171,32 @@ public class TaggerApplication
 	
 	mainFrame.pack();
 	mainFrame.setVisible(true);
+	
+	setReadyState();
     }
     
-    private IGkFsEntry getSelectedFolder(String command)
+    private List<IGkFsEntry> getSelectedFolder(String command)
     {
-	File f = this.fileChooser.getSelectedFile();
-	if (f != null)
+	File[] ff = this.fileChooser.getSelectedFiles();
+	List<IGkFsEntry> selection = new ArrayList<IGkFsEntry>();
+	if (ff != null)
 	{
-	    log.debug(command + " with selected folder: " + f.getAbsolutePath());
-	    IGkFsParserSearchLocation searchLoc = GkFsParserFactory.createSearchLocation("<foo>", f.getAbsolutePath(), 0);
-	    IGkFsParserResult result = this.fsParser.parseFolders(searchLoc);
-	    if (result.getEntries().size() != 1)
+	    for (File f : ff)
 	    {
-		log.error("folder search results [" + result.getEntries().size() + "]" + result.getEntries());
-		return null;
+		log.debug(command + " with selected folder: " + f.getAbsolutePath());
+		IGkFsParserSearchLocation searchLoc = GkFsParserFactory.createSearchLocation("<foo>", f.getAbsolutePath(), 0);
+		IGkFsParserResult result = this.fsParser.parseFolders(searchLoc);
+		if (result.getEntries().size() != 1)
+		{
+		    log.error("folder search results [" + result.getEntries().size() + "]" + result.getEntries());
+		    return null;
+		}
+		IGkFsEntry res = result.getEntries().get(0);
+		selection.add(res);
 	    }
-	    IGkFsEntry res = result.getEntries().get(0);
-	    return res;
+	    return selection;
 	}
-	log.error(command + " with selected folder: " + f);
+	log.error(command + " with selected folders: " + ff);
 	// TODO: show error window
 	return null;
     }
@@ -190,26 +215,67 @@ public class TaggerApplication
 	}
     }
     
-    private void updateArtistRelease(IGkFsEntry loc)
+    private void updateArtistReleaseTrackcount(IGkFsEntry loc)
     {
 	this.labelArtist.setText(Config.LABEL_ARTIST + "<" + loc.getArtistName() + ">");
 	this.labelRelease.setText(Config.LABEL_RELEASE + "<" + loc.getReleaseName() + ">");
+	int countInMetaInfo = 0;
+	int countInFolder = 0;
+	
+	File f = loc.getFile();
+	for(String s : f.list())
+	{
+	    if(s.endsWith("mp3"))
+	    {
+		countInFolder++;
+	    }
+	}
+	IGkTaggingProfileReader reader = GkTaggingProfileReaderWriterFactory.createReader();
+	ITaggingProfile profile = reader.read(loc.getPath());
+	countInMetaInfo = profile.getTrackInfos().size();
+	this.labelTrackcount.setText(Config.LABEL_TRACKCOUNT+ "<MetaInf:" + countInMetaInfo +"/Folder:"+ countInFolder + ">");
     }
     
-    private void updateArtistReleaseUnapplicable()
+    private void updateArtistReleaseTrackcountUnapplicable()
     {
 	this.labelArtist.setText(Config.LABEL_ARTIST + "--");
 	this.labelRelease.setText(Config.LABEL_RELEASE + "--");
+	this.labelTrackcount.setText(Config.LABEL_TRACKCOUNT+ "--");
     }
     
-    private void parseMetaInfo(IGkFsEntry entry)
+    private void updateArtistReleaseTrackcountMulti()
     {
+	this.labelArtist.setText(Config.LABEL_ARTIST + "...");
+	this.labelRelease.setText(Config.LABEL_RELEASE + "...");
+	this.labelTrackcount.setText(Config.LABEL_TRACKCOUNT+ "...");
+    }
+    
+    private void actionBatchParseMetaInfo(List<IGkFsEntry> entries)
+    {
+	for (IGkFsEntry e : entries)
+	{
+	    actionParseMetaInfo(e);
+	}
+    }
+    
+    private void actionParseMetaInfo(IGkFsEntry entry)
+    {
+	setRunState("parsing internet for meta info for " + entry.toString());
 	this.collector.setSimpleFormat(this.checkBoxFormat.isEnabled());
 	this.collector.collectMetaInfo(entry.getPath());
     }
     
-    private void writeTags(IGkFsEntry entry)
+    private void actionBatchWriteTags(List<IGkFsEntry> entries)
     {
+	for (IGkFsEntry e : entries)
+	{
+	    actionWriteTags(e);
+	}
+    }
+    
+    private void actionWriteTags(IGkFsEntry entry)
+    {
+	setRunState("writing tags for " + entry.toString());
 	try
 	{
 	    this.writer.writeTags(entry.getPath());
@@ -220,7 +286,15 @@ public class TaggerApplication
 	}
     }
     
-    private void showInEditor(IGkFsEntry entry)
+    private void actionBatchShowInEditor(List<IGkFsEntry> entries)
+    {
+	for (IGkFsEntry e : entries)
+	{
+	    actionShowInEditor(e);
+	}
+    }
+    
+    private void actionShowInEditor(IGkFsEntry entry)
     {
 	String editorCmdRaw = this.textFieldEditorPath.getText();
 	String editorPath = new String(editorCmdRaw);
@@ -276,20 +350,51 @@ public class TaggerApplication
 	}
     }
     
+    private void setRunState(String stateName)
+    {
+	this.buttonPanel.setEnabled(false);
+	this.buttonParse.setEnabled(false);
+	this.buttonShowMetainfo.setEnabled(false);
+	this.buttonTag.setEnabled(false);
+	this.statusLine.setBackground(Color.BLUE);
+	this.statusLabel.setText("processing " + stateName + "...");
+    }
+    
+    private void setErrorState(Exception e)
+    {
+	this.buttonPanel.setEnabled(true);
+	this.buttonParse.setEnabled(true);
+	this.buttonShowMetainfo.setEnabled(true);
+	this.buttonTag.setEnabled(true);
+	this.statusLine.setBackground(Color.RED);
+	this.statusLabel.setText("ERROR: " + e.getMessage());
+    }
+    
+    private void setReadyState()
+    {
+	this.buttonPanel.setEnabled(true);
+	this.buttonParse.setEnabled(true);
+	this.buttonShowMetainfo.setEnabled(true);
+	this.buttonTag.setEnabled(true);
+	this.statusLine.setBackground(Color.GREEN);
+	this.statusLabel.setText("READY");
+    }
+    
     class ParseButtonAL implements ActionListener
     {
 	@Override
 	public void actionPerformed(ActionEvent a)
 	{
-	    IGkFsEntry e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
+	    List<IGkFsEntry> e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
 	    if (e != null)
 	    {
-		TaggerApplication.this.parseMetaInfo(e);
+		TaggerApplication.this.actionBatchParseMetaInfo(e);
 	    }
 	    else
-	    {// TODO: show error window
-	    
+	    {
+		// TODO: show error window
 	    }
+	    setReadyState();
 	}
     }
     
@@ -298,14 +403,16 @@ public class TaggerApplication
 	@Override
 	public void actionPerformed(ActionEvent a)
 	{
-	    IGkFsEntry e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
+	    List<IGkFsEntry> e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
 	    if (e != null)
 	    {
-		TaggerApplication.this.writeTags(e);
+		TaggerApplication.this.actionBatchWriteTags(e);
 	    }
 	    else
-	    {// TODO: show error window
+	    {
+		// TODO: show error window
 	    }
+	    setReadyState();
 	}
     }
     
@@ -314,14 +421,16 @@ public class TaggerApplication
 	@Override
 	public void actionPerformed(ActionEvent a)
 	{
-	    IGkFsEntry e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
+	    List<IGkFsEntry> e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
 	    if (e != null)
 	    {
-		TaggerApplication.this.showInEditor(e);
+		TaggerApplication.this.actionBatchShowInEditor(e);
 	    }
 	    else
-	    {// TODO: show error window
+	    {
+		// TODO: show error window
 	    }
+	    setReadyState();
 	}
     }
     
@@ -330,7 +439,7 @@ public class TaggerApplication
 	@Override
 	public void actionPerformed(ActionEvent a)
 	{
-	    IGkFsEntry e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
+	    List<IGkFsEntry> e = TaggerApplication.this.getSelectedFolder(a.getActionCommand());
 	}
     }
     
@@ -338,7 +447,6 @@ public class TaggerApplication
     {
 	try
 	{
-	    
 	    String strLine;
 	    BufferedReader br = new BufferedReader(new FileReader(f));
 	    area.setText("");
@@ -363,24 +471,31 @@ public class TaggerApplication
 	{
 	    if (JFileChooser.SELECTED_FILE_CHANGED_PROPERTY.equals(a.getPropertyName()))
 	    {
-		IGkFsEntry e = TaggerApplication.this.getSelectedFolder(a.getPropertyName());
+		List<IGkFsEntry> e = TaggerApplication.this.getSelectedFolder(a.getPropertyName());
 		if (e != null)
 		{
-		    updateArtistRelease(e);
-		    File mdf = getMetadataFile(e);
-		    if (mdf != null)
+		    if (e.size() > 1)
 		    {
-			TaggerApplication.this.actTextToTextAreaFromFile(mdf, TaggerApplication.this.textArea);
+			updateArtistReleaseTrackcountMulti();
 		    }
-		    else
+		    else if (e.size() == 1)
 		    {
-			TaggerApplication.this.textArea.setText("");
+			updateArtistReleaseTrackcount(e.get(0));
+			File mdf = getMetadataFile(e.get(0));
+			if (mdf != null)
+			{
+			    TaggerApplication.this.actTextToTextAreaFromFile(mdf, TaggerApplication.this.textArea);
+			}
+			else
+			{
+			    TaggerApplication.this.textArea.setText("");
+			}
 		    }
 		}
 		else
 		{
 		    TaggerApplication.this.textArea.setText("");
-		    updateArtistReleaseUnapplicable();
+		    updateArtistReleaseTrackcountUnapplicable();
 		}
 	    }
 	}
